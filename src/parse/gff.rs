@@ -29,11 +29,11 @@ fn parse_line(line: &str) -> Option<Record> {
         return None;
     }
     // GFF3/GTF: 1-based closed → 0-based half-open
-    let start1 = cols[3].trim().parse::<u64>().ok()?;
+    let start1 = atoi::atoi::<u64>(cols[3].trim().as_bytes())?;
     if start1 == 0 {
         return None; // GFF3 coordinates are 1-based; 0 is invalid
     }
-    let end = cols[4].trim().parse::<u64>().ok()?;
+    let end = atoi::atoi::<u64>(cols[4].trim().as_bytes())?;
     let start = start1 - 1;
     let chrom = cols[0].trim().to_string();
     Some(Record {
@@ -72,7 +72,8 @@ pub fn parse(path: &Path) -> Result<Vec<Record>, GetinbedError> {
 
 pub fn parse_bytes(data: &[u8]) -> Vec<Record> {
     data.par_split(|&b| b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
+        // SAFETY: genomic coordinate files are ASCII; ASCII is valid UTF-8.
+        .map(|line| unsafe { std::str::from_utf8_unchecked(line) })
         .filter_map(parse_line)
         .collect()
 }

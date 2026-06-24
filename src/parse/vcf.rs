@@ -17,7 +17,7 @@ fn parse_line(line: &str) -> Option<Record> {
     if cols.len() < 4 {
         return None;
     }
-    let pos1 = cols[1].trim().parse::<u64>().ok()?;
+    let pos1 = atoi::atoi::<u64>(cols[1].trim().as_bytes())?;
     if pos1 == 0 {
         return None;
     }
@@ -65,7 +65,8 @@ pub fn parse(path: &Path) -> Result<Vec<Record>, GetinbedError> {
 
 pub fn parse_bytes(data: &[u8]) -> Vec<Record> {
     data.par_split(|&b| b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
+        // SAFETY: genomic coordinate files are ASCII; ASCII is valid UTF-8.
+        .map(|line| unsafe { std::str::from_utf8_unchecked(line) })
         .filter_map(parse_line)
         .collect()
 }

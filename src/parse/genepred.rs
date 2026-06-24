@@ -19,8 +19,8 @@ fn parse_line(line: &str) -> Option<Record> {
     // genePred: col0=name col1=chrom col2=strand col3=txStart col4=txEnd (0-based half-open)
     // Header lines have a non-numeric first column (e.g. "#name", "name"); real records
     // have transcript IDs. txStart/txEnd are at cols 3 and 4.
-    let start = cols[3].trim().parse::<u64>().ok()?;
-    let end = cols[4].trim().parse::<u64>().ok()?;
+    let start = atoi::atoi::<u64>(cols[3].trim().as_bytes())?;
+    let end = atoi::atoi::<u64>(cols[4].trim().as_bytes())?;
     let chrom = cols[1].trim().to_string();
     Some(Record {
         chrom,
@@ -51,7 +51,8 @@ pub fn parse(path: &Path) -> Result<Vec<Record>, GetinbedError> {
 
 pub fn parse_bytes(data: &[u8]) -> Vec<Record> {
     data.par_split(|&b| b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
+        // SAFETY: genomic coordinate files are ASCII; ASCII is valid UTF-8.
+        .map(|line| unsafe { std::str::from_utf8_unchecked(line) })
         .filter_map(parse_line)
         .collect()
 }

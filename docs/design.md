@@ -164,7 +164,6 @@ Options:
   --no-clean               Skip deduplication and malformed-row removal
   --no-sort                Skip sorting
   -j, --jobs <N>           Parallel workers [default: num CPUs]
-  --output-format <FMT>    Output format: bed (default) | tsv
   -q, --quiet              Suppress progress output
 ```
 
@@ -252,7 +251,7 @@ Files are read via `memmap2` for zero-copy I/O. Gzip files are streamed line-by-
 
 - Liftover between genome assemblies
 - Merging overlapping intervals (use `bedtools merge`)
-- Output formats other than BED/TSV
+- Output formats other than BED
 - BAM/SAM/CRAM alignment files
 - BCF (binary VCF)
 - Coordinate validation against a reference genome

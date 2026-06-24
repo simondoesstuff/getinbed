@@ -70,6 +70,7 @@
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
             cargo
+            cmake
             # bio
             htslib # bgzip
             bedtools

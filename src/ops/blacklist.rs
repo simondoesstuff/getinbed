@@ -1,12 +1,14 @@
 use crate::error::GetinbedError;
+use coitrees::{COITree, Interval, IntervalTree};
 use flate2::read::GzDecoder;
+use memmap2::Mmap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 pub struct BlacklistIndex {
-    map: HashMap<String, Vec<(u64, u64)>>,
+    chroms: HashMap<String, COITree<(), u32>>,
 }
 
 impl BlacklistIndex {
@@ -18,64 +20,72 @@ impl BlacklistIndex {
             )));
         }
 
+        let mut by_chrom: HashMap<String, Vec<Interval<()>>> = HashMap::new();
+
         let file = File::open(path)?;
         let is_gz = path.to_string_lossy().to_lowercase().ends_with(".gz");
 
-        let reader: Box<dyn BufRead> = if is_gz {
-            Box::new(BufReader::new(GzDecoder::new(file)))
+        if is_gz {
+            let reader = BufReader::new(GzDecoder::new(file));
+            for line in reader.lines().filter_map(|l| l.ok()) {
+                parse_entry(line.trim_end_matches(['\r', '\n']), &mut by_chrom);
+            }
         } else {
-            Box::new(BufReader::new(file))
-        };
-
-        let mut map: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
-
-        for line in reader.lines() {
-            let line = line?;
-            let line = line.trim_end_matches(['\r', '\n']).to_string();
-            if line.trim().is_empty()
-                || line.starts_with('#')
-                || line.starts_with("track")
-                || line.starts_with("browser")
-            {
-                continue;
+            let mmap = unsafe { Mmap::map(&file)? };
+            for chunk in mmap.split(|&b| b == b'\n') {
+                // SAFETY: genomic coordinate files are ASCII; ASCII is valid UTF-8.
+                let line = unsafe { std::str::from_utf8_unchecked(chunk) };
+                parse_entry(line.trim_end_matches(['\r', '\n']), &mut by_chrom);
             }
-            let cols: Vec<&str> = line.split('\t').collect();
-            if cols.len() < 3 {
-                continue;
-            }
-            let Ok(start) = cols[1].trim().parse::<u64>() else {
-                continue;
-            };
-            let Ok(end) = cols[2].trim().parse::<u64>() else {
-                continue;
-            };
-            let c = cols[0].trim().to_string();
-            map.entry(c).or_default().push((start, end));
         }
 
-        for intervals in map.values_mut() {
-            intervals.sort_unstable();
-        }
+        let chroms = by_chrom
+            .into_iter()
+            .map(|(k, v)| (k, COITree::new(&v)))
+            .collect();
 
-        Ok(BlacklistIndex { map })
+        Ok(BlacklistIndex { chroms })
     }
 
-    /// Returns true if (chrom, start, end) overlaps any blacklist interval.
-    /// Overlap: input.start < bl.end && input.end > bl.start.
+    /// Returns true if `[start, end)` overlaps any blacklist interval on `chrom`.
     pub fn overlaps(&self, chrom: &str, start: u64, end: u64) -> bool {
-        let Some(intervals) = self.map.get(chrom) else {
+        let Some(tree) = self.chroms.get(chrom) else {
             return false;
         };
-        // Binary search: first interval where bl_end > start
-        let pos = intervals.partition_point(|&(_, bl_end)| bl_end <= start);
-        for &(bl_start, _) in &intervals[pos..] {
-            if bl_start >= end {
-                break;
-            }
-            return true;
-        }
-        false
+        // coitrees uses inclusive [first, last]; convert half-open [start, end) → [start, end-1]
+        tree.query_count(start as i32, (end as i32).saturating_sub(1)) > 0
     }
+}
+
+fn parse_entry(line: &str, by_chrom: &mut HashMap<String, Vec<Interval<()>>>) {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with('#')
+        || trimmed.starts_with("track")
+        || trimmed.starts_with("browser")
+    {
+        return;
+    }
+    let cols: Vec<&str> = line.split('\t').collect();
+    if cols.len() < 3 {
+        return;
+    }
+    let Some(start) = atoi::atoi::<u64>(cols[1].trim().as_bytes()) else {
+        return;
+    };
+    let Some(end) = atoi::atoi::<u64>(cols[2].trim().as_bytes()) else {
+        return;
+    };
+    if start >= end {
+        return;
+    }
+    let chrom = cols[0].trim().to_string();
+    // coitrees uses inclusive [first, last]; convert half-open [start, end) → [start, end-1]
+    by_chrom.entry(chrom).or_default().push(Interval {
+        first: start as i32,
+        last: (end - 1) as i32,
+        metadata: (),
+    });
 }
 
 #[cfg(test)]
@@ -85,14 +95,11 @@ mod tests {
     use tempfile::NamedTempFile;
 
     fn make_index(entries: &[(&str, u64, u64)]) -> BlacklistIndex {
-        let mut map: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+        let mut f = NamedTempFile::new().unwrap();
         for &(chrom, start, end) in entries {
-            map.entry(chrom.to_string()).or_default().push((start, end));
+            writeln!(f, "{}\t{}\t{}", chrom, start, end).unwrap();
         }
-        for v in map.values_mut() {
-            v.sort_unstable();
-        }
-        BlacklistIndex { map }
+        BlacklistIndex::load(f.path()).unwrap()
     }
 
     #[test]

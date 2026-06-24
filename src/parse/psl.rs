@@ -17,11 +17,11 @@ fn parse_line(line: &str) -> Option<Record> {
         return None;
     }
     // PSL col0 must be numeric (match count); this skips the 5-line ASCII header
-    cols[0].trim().parse::<u64>().ok()?;
+    atoi::atoi::<u64>(cols[0].trim().as_bytes())?;
     // Target (genome) coordinates: col13=tName, col15=tStart, col16=tEnd (0-based half-open)
     let tname = cols[13].trim();
-    let tstart = cols[15].trim().parse::<u64>().ok()?;
-    let tend = cols[16].trim().parse::<u64>().ok()?;
+    let tstart = atoi::atoi::<u64>(cols[15].trim().as_bytes())?;
+    let tend = atoi::atoi::<u64>(cols[16].trim().as_bytes())?;
     let chrom = tname.to_string();
     Some(Record {
         chrom,
@@ -52,7 +52,8 @@ pub fn parse(path: &Path) -> Result<Vec<Record>, GetinbedError> {
 
 pub fn parse_bytes(data: &[u8]) -> Vec<Record> {
     data.par_split(|&b| b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
+        // SAFETY: genomic coordinate files are ASCII; ASCII is valid UTF-8.
+        .map(|line| unsafe { std::str::from_utf8_unchecked(line) })
         .filter_map(parse_line)
         .collect()
 }
