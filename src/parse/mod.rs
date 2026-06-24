@@ -44,3 +44,23 @@ pub struct Record {
     /// end is derived, not stored directly, e.g. VCF).
     pub end_col: usize,
 }
+
+/// Parse raw bytes in the given format, returning records. Useful for testing
+/// and benchmarking without touching the filesystem.
+///
+/// Only text-based formats are supported (big* formats require a seekable file).
+pub fn parse_from_bytes(data: &[u8], format: Format) -> Vec<Record> {
+    match format {
+        Format::Bed | Format::NarrowPeak | Format::BroadPeak | Format::BedGraph => {
+            bed::parse_bytes(data)
+        }
+        Format::GenePred => genepred::parse_bytes(data),
+        Format::Psl => psl::parse_bytes(data),
+        Format::Gff3 | Format::Gtf => {
+            let trimmed = gff::strip_fasta_section(data);
+            gff::parse_bytes(trimmed)
+        }
+        Format::Vcf | Format::VcfTabix => vcf::parse_bytes(data),
+        _ => vec![], // big* formats require a file path
+    }
+}

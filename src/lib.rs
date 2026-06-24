@@ -1,9 +1,9 @@
-mod batch;
+pub mod batch;
 mod chrom;
 mod detect;
 mod error;
-mod ops;
-mod parse;
+pub mod ops;
+pub mod parse;
 
 pub use batch::{process_batch, Opts, ProcessResult};
 pub use detect::parse_format_str;

@@ -42,10 +42,10 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_drops_invalid() {
+    fn test_clean_drops_start_ge_end() {
         let records = vec![
-            rec("chr1", 100, 50),  // start >= end
-            rec("", 0, 100),        // empty chrom
+            rec("chr1", 100, 50),  // start > end
+            rec("chr1", 100, 100), // start == end
             rec("chr1", 0, 100),
         ];
         let (cleaned, skipped) = clean(records);
@@ -54,14 +54,68 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_deduplicates() {
+    fn test_clean_drops_empty_chrom() {
+        let records = vec![
+            rec("", 0, 100),
+            rec("chr1", 0, 100),
+        ];
+        let (cleaned, skipped) = clean(records);
+        assert_eq!(cleaned.len(), 1);
+        assert_eq!(skipped, 1);
+    }
+
+    #[test]
+    fn test_clean_deduplicates_exact() {
         let records = vec![
             rec("chr1", 0, 100),
-            rec("chr1", 0, 100),
+            rec("chr1", 0, 100), // duplicate
+            rec("chr1", 0, 100), // duplicate
             rec("chr1", 50, 150),
         ];
         let (cleaned, skipped) = clean(records);
         assert_eq!(cleaned.len(), 2);
-        assert_eq!(skipped, 1);
+        assert_eq!(skipped, 2);
+    }
+
+    #[test]
+    fn test_clean_dedup_keeps_first() {
+        // Records with same coords but different raw data — first one kept
+        let mut r1 = rec("chr1", 0, 100);
+        r1.raw.push("first".to_string());
+        let mut r2 = rec("chr1", 0, 100);
+        r2.raw.push("second".to_string());
+        let (cleaned, _) = clean(vec![r1, r2]);
+        assert_eq!(cleaned.len(), 1);
+        assert_eq!(cleaned[0].raw.last().unwrap(), "first");
+    }
+
+    #[test]
+    fn test_clean_dedup_different_chroms() {
+        let records = vec![
+            rec("chr1", 0, 100),
+            rec("chr2", 0, 100), // same coords, different chrom — not a dup
+        ];
+        let (cleaned, skipped) = clean(records);
+        assert_eq!(cleaned.len(), 2);
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn test_clean_empty_input() {
+        let (cleaned, skipped) = clean(vec![]);
+        assert!(cleaned.is_empty());
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn test_clean_all_valid_no_dups() {
+        let records = vec![
+            rec("chr1", 0, 100),
+            rec("chr1", 200, 300),
+            rec("chr2", 0, 100),
+        ];
+        let (cleaned, skipped) = clean(records);
+        assert_eq!(cleaned.len(), 3);
+        assert_eq!(skipped, 0);
     }
 }
