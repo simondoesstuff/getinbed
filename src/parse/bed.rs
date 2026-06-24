@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use flate2::read::GzDecoder;
@@ -23,7 +22,7 @@ fn parse_line(line: &str) -> Option<Record> {
     }
     let start = cols[1].trim().parse::<u64>().ok()?;
     let end = cols[2].trim().parse::<u64>().ok()?;
-    let chrom = chrom::normalize(cols[0].trim());
+    let chrom = cols[0].trim().to_string();
     Some(Record {
         chrom,
         start,
@@ -80,11 +79,16 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_line_normalizes_chrom() {
+    fn test_parse_line_chrom_passthrough() {
+        // No normalization — chrom is returned as-is from the file
         let r = parse_line("1\t0\t100").unwrap();
-        assert_eq!(r.chrom, "chr1");
+        assert_eq!(r.chrom, "1");
         let r = parse_line("MT\t0\t100").unwrap();
-        assert_eq!(r.chrom, "chrM");
+        assert_eq!(r.chrom, "MT");
+        let r = parse_line("chr1\t0\t100").unwrap();
+        assert_eq!(r.chrom, "chr1");
+        let r = parse_line("2L\t0\t100").unwrap();
+        assert_eq!(r.chrom, "2L");
     }
 
     #[test]

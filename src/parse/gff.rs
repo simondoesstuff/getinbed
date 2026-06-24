@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use flate2::read::GzDecoder;
@@ -36,7 +35,7 @@ fn parse_line(line: &str) -> Option<Record> {
     }
     let end = cols[4].trim().parse::<u64>().ok()?;
     let start = start1 - 1;
-    let chrom = chrom::normalize(cols[0].trim());
+    let chrom = cols[0].trim().to_string();
     Some(Record {
         chrom,
         start,
@@ -130,11 +129,13 @@ mod tests {
     }
 
     #[test]
-    fn test_gff_chrom_normalization() {
+    fn test_gff_chrom_passthrough() {
         let r = line("1\t.\tgene\t1\t100\t.\t+\t.\t.").unwrap();
-        assert_eq!(r.chrom, "chr1");
+        assert_eq!(r.chrom, "1");
         let r = line("MT\t.\tgene\t1\t100\t.\t+\t.\t.").unwrap();
-        assert_eq!(r.chrom, "chrM");
+        assert_eq!(r.chrom, "MT");
+        let r = line("2L\t.\tgene\t1\t100\t.\t+\t.\t.").unwrap();
+        assert_eq!(r.chrom, "2L");
     }
 
     #[test]

@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use flate2::read::GzDecoder;
@@ -26,7 +25,7 @@ fn parse_line(line: &str) -> Option<Record> {
     // REF allele determines the end; use the first allele if comma-separated
     let ref_allele = cols[3].split(',').next().unwrap_or("N");
     let end = start + (ref_allele.len() as u64).max(1);
-    let chrom = chrom::normalize(cols[0].trim());
+    let chrom = cols[0].trim().to_string();
     Some(Record {
         chrom,
         start,
@@ -104,11 +103,13 @@ mod tests {
     }
 
     #[test]
-    fn test_vcf_chrom_normalization() {
+    fn test_vcf_chrom_passthrough() {
         let r = line("1\t1\t.\tA\tT\t.\tPASS\t.").unwrap();
-        assert_eq!(r.chrom, "chr1");
+        assert_eq!(r.chrom, "1");
         let r = line("MT\t1\t.\tA\tT\t.\tPASS\t.").unwrap();
-        assert_eq!(r.chrom, "chrM");
+        assert_eq!(r.chrom, "MT");
+        let r = line("chr1\t1\t.\tA\tT\t.\tPASS\t.").unwrap();
+        assert_eq!(r.chrom, "chr1");
     }
 
     #[test]

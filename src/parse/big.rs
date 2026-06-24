@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use bigtools::BigBedRead;
@@ -30,9 +29,8 @@ pub fn parse(path: &Path) -> Result<Vec<Record>, GetinbedError> {
             if !iv.rest.is_empty() {
                 raw.extend(iv.rest.split('\t').map(|s| s.to_string()));
             }
-            let normalized_chrom = chrom::normalize(&chrom_info.name);
             records.push(Record {
-                chrom: normalized_chrom,
+                chrom: chrom_info.name.clone(),
                 start: iv.start as u64,
                 end: iv.end as u64,
                 raw,

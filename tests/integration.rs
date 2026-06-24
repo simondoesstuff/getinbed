@@ -1,5 +1,6 @@
 use getinbed::batch::{process_batch, Opts, ProcessResult};
 use getinbed::parse::Format;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
@@ -11,12 +12,16 @@ fn default_opts(out: &TempDir) -> Opts {
         extra_columns: vec![],
         blacklist: None,
         split_on: None,
-        keep_nonstandard: false,
+        chroms: None,
         no_clean: false,
         no_sort: false,
         jobs: None,
         quiet: true,
     }
+}
+
+fn chroms(list: &[&str]) -> HashSet<String> {
+    list.iter().map(|s| s.to_string()).collect()
 }
 
 fn write_bed(content: &str) -> NamedTempFile {
@@ -44,23 +49,25 @@ fn test_basic_bed_roundtrip() {
 }
 
 #[test]
-fn test_chrom_normalization_in_output() {
+fn test_chrom_passthrough() {
+    // Chromosomes are returned exactly as they appear in the file — no normalization.
     let out = TempDir::new().unwrap();
     let f = write_bed("1\t0\t100\nMT\t0\t50\n");
     let results = process_batch(&[f.path().to_path_buf()], &default_opts(&out)).unwrap();
     let content = read_output(&results[0]);
     let lines: Vec<&str> = content.lines().collect();
-    // "1" → "chr1", "MT" → "chrM", but chrM is standard and kept
-    // Sort order: chr1 before chrM
-    assert_eq!(lines[0], "chr1\t0\t100");
-    assert_eq!(lines[1], "chrM\t0\t50");
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().any(|l| l.starts_with("1\t")));
+    assert!(lines.iter().any(|l| l.starts_with("MT\t")));
 }
 
 #[test]
-fn test_nonstandard_chroms_dropped_by_default() {
+fn test_chrom_whitelist_filters() {
     let out = TempDir::new().unwrap();
     let f = write_bed("chr1\t0\t100\nscaffold_1\t0\t50\nchrUn_gl000220\t0\t10\n");
-    let results = process_batch(&[f.path().to_path_buf()], &default_opts(&out)).unwrap();
+    let mut opts = default_opts(&out);
+    opts.chroms = Some(chroms(&["chr1", "chr2"]));
+    let results = process_batch(&[f.path().to_path_buf()], &opts).unwrap();
     let content = read_output(&results[0]);
     let lines: Vec<&str> = content.lines().collect();
     assert_eq!(lines.len(), 1);
@@ -68,14 +75,25 @@ fn test_nonstandard_chroms_dropped_by_default() {
 }
 
 #[test]
-fn test_nonstandard_chroms_kept_with_flag() {
+fn test_chrom_whitelist_bare_names() {
+    // Works equally well with Ensembl-style bare chromosome names.
     let out = TempDir::new().unwrap();
-    let f = write_bed("chr1\t0\t100\nscaffold_1\t0\t50\n");
+    let f = write_bed("1\t0\t100\n2\t0\t50\nMT\t0\t10\nscaffold_1\t0\t5\n");
     let mut opts = default_opts(&out);
-    opts.keep_nonstandard = true;
+    opts.chroms = Some(chroms(&["1", "2", "MT"]));
     let results = process_batch(&[f.path().to_path_buf()], &opts).unwrap();
     let content = read_output(&results[0]);
-    assert_eq!(content.lines().count(), 2);
+    assert_eq!(content.lines().count(), 3);
+}
+
+#[test]
+fn test_no_filter_by_default() {
+    // Without --chroms, scaffolds and unusual names pass through.
+    let out = TempDir::new().unwrap();
+    let f = write_bed("chr1\t0\t100\nscaffold_1\t0\t50\n2L\t0\t200\n");
+    let results = process_batch(&[f.path().to_path_buf()], &default_opts(&out)).unwrap();
+    let content = read_output(&results[0]);
+    assert_eq!(content.lines().count(), 3);
 }
 
 #[test]
@@ -222,16 +240,12 @@ fn test_gff_format() {
         .suffix(".gff3")
         .tempfile()
         .unwrap();
-    write!(
-        f,
-        "## gff-version 3\nchr1\t.\tgene\t1\t1000\t.\t+\t.\tID=g1\n"
-    )
-    .unwrap();
+    // GFF3: 1-based closed → 0-based half-open; chrom passes through as-is
+    write!(f, "## gff-version 3\n1\t.\tgene\t1\t1000\t.\t+\t.\tID=g1\n").unwrap();
 
     let results = process_batch(&[f.path().to_path_buf()], &default_opts(&out)).unwrap();
     let content = read_output(&results[0]);
-    // GFF3 1-based → 0-based: start=1 → 0
-    assert_eq!(content.trim(), "chr1\t0\t1000");
+    assert_eq!(content.trim(), "1\t0\t1000");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::chrom;
+use crate::chrom::chrom_order;
 use crate::detect;
 use crate::error::GetinbedError;
 use crate::ops;
@@ -6,6 +6,7 @@ use crate::ops::blacklist::BlacklistIndex;
 use crate::parse::{self, Format, Record};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +17,9 @@ pub struct Opts {
     pub extra_columns: Vec<usize>,
     pub blacklist: Option<PathBuf>,
     pub split_on: Option<usize>,
-    pub keep_nonstandard: bool,
+    /// When Some, only records whose chrom is in this set are kept.
+    /// When None, all chromosomes pass through unfiltered.
+    pub chroms: Option<HashSet<String>>,
     pub no_clean: bool,
     pub no_sort: bool,
     pub jobs: Option<usize>,
@@ -73,8 +76,8 @@ pub fn process_one_for_memory(path: &Path, opts: &Opts) -> Result<Vec<Record>, G
 
     let mut records = parse_file(path, format)?;
 
-    if !opts.keep_nonstandard {
-        records.retain(|r| chrom::is_standard(&r.chrom));
+    if let Some(whitelist) = &opts.chroms {
+        records.retain(|r| whitelist.contains(&r.chrom));
     }
 
     if !opts.no_clean {
@@ -106,8 +109,8 @@ fn process_one_file(
 
     let mut records = parse_file(path, format)?;
 
-    if !opts.keep_nonstandard {
-        records.retain(|r| chrom::is_standard(&r.chrom));
+    if let Some(whitelist) = &opts.chroms {
+        records.retain(|r| whitelist.contains(&r.chrom));
     }
 
     let mut skipped = 0;

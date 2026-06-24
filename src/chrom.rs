@@ -1,107 +1,96 @@
-pub fn normalize(name: &str) -> String {
-    let lc = name.to_lowercase();
+/// Karyotypic sort key for a chromosome name. Works on both UCSC-style
+/// (`chr1`, `chrX`) and bare (`1`, `X`, `2L`) names. Numeric chromosomes
+/// sort first (by number), then sex/mito, then everything else alphabetically.
+pub fn chrom_order(chrom: &str) -> u64 {
+    // Strip chr/Chr/CHR prefix for analysis
+    let bare = if chrom.len() > 3 && chrom[..3].eq_ignore_ascii_case("chr") {
+        &chrom[3..]
+    } else {
+        chrom
+    };
 
-    if lc == "mt" || lc == "m" {
-        return "chrM".to_string();
+    let upper = bare.to_ascii_uppercase();
+
+    // Mitochondrial aliases — check before numeric so "M" doesn't fall through
+    if upper == "M" || upper == "MT" {
+        return u64::MAX - 2;
     }
-    if lc == "x" {
-        return "chrX".to_string();
+    // Sex / dosage chromosomes (Z/W for birds, X/Y for mammals)
+    if upper == "X" || upper == "Z" {
+        return u64::MAX - 4;
     }
-    if lc == "y" {
-        return "chrY".to_string();
+    if upper == "Y" || upper == "W" {
+        return u64::MAX - 3;
     }
 
-    if let Some(rest) = lc.strip_prefix("chr") {
-        if rest == "mt" || rest == "m" {
-            return "chrM".to_string();
+    // Pure integer: "1", "22", "chr25" (zebrafish)
+    if let Ok(n) = bare.parse::<u64>() {
+        return n.saturating_mul(256);
+    }
+
+    // Integer + arm suffix: "2L", "2R", "3L" (Drosophila)
+    // Sort by chromosome number first, then arm letter.
+    let digit_end = bare.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digit_end > 0 {
+        if let Ok(n) = bare[..digit_end].parse::<u64>() {
+            let arm = bare.as_bytes().get(digit_end).copied().unwrap_or(0) as u64;
+            return n.saturating_mul(256) + arm;
         }
-        return format!("chr{}", &name[3..]);
     }
 
-    if !name.is_empty() && name.chars().all(|c| c.is_ascii_digit()) {
-        return format!("chr{}", name);
-    }
-
-    name.to_string()
-}
-
-pub fn is_standard(chrom: &str) -> bool {
-    matches!(
-        chrom,
-        "chr1" | "chr2" | "chr3" | "chr4" | "chr5" | "chr6" | "chr7" | "chr8" | "chr9"
-            | "chr10" | "chr11" | "chr12" | "chr13" | "chr14" | "chr15" | "chr16" | "chr17"
-            | "chr18" | "chr19" | "chr20" | "chr21" | "chr22" | "chrX" | "chrY" | "chrM"
-    )
-}
-
-pub fn chrom_order(chrom: &str) -> u32 {
-    match chrom {
-        "chr1" => 1,
-        "chr2" => 2,
-        "chr3" => 3,
-        "chr4" => 4,
-        "chr5" => 5,
-        "chr6" => 6,
-        "chr7" => 7,
-        "chr8" => 8,
-        "chr9" => 9,
-        "chr10" => 10,
-        "chr11" => 11,
-        "chr12" => 12,
-        "chr13" => 13,
-        "chr14" => 14,
-        "chr15" => 15,
-        "chr16" => 16,
-        "chr17" => 17,
-        "chr18" => 18,
-        "chr19" => 19,
-        "chr20" => 20,
-        "chr21" => 21,
-        "chr22" => 22,
-        "chrX" => 23,
-        "chrY" => 24,
-        "chrM" => 25,
-        _ => 26,
-    }
+    // Everything else (scaffolds, roman numerals, etc.) — sort alphabetically
+    // among themselves, after numeric/sex/mito chroms.
+    u64::MAX - 1
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_normalize() {
-        assert_eq!(normalize("1"), "chr1");
-        assert_eq!(normalize("22"), "chr22");
-        assert_eq!(normalize("X"), "chrX");
-        assert_eq!(normalize("Y"), "chrY");
-        assert_eq!(normalize("M"), "chrM");
-        assert_eq!(normalize("MT"), "chrM");
-        assert_eq!(normalize("chrMT"), "chrM");
-        assert_eq!(normalize("chr1"), "chr1");
-        assert_eq!(normalize("chrX"), "chrX");
-        assert_eq!(normalize("chrM"), "chrM");
-        assert_eq!(normalize("scaffold_1"), "scaffold_1");
+    fn order(a: &str, b: &str) -> std::cmp::Ordering {
+        chrom_order(a).cmp(&chrom_order(b))
     }
 
     #[test]
-    fn test_is_standard() {
-        assert!(is_standard("chr1"));
-        assert!(is_standard("chr22"));
-        assert!(is_standard("chrX"));
-        assert!(is_standard("chrY"));
-        assert!(is_standard("chrM"));
-        assert!(!is_standard("chrMT"));
-        assert!(!is_standard("scaffold_1"));
-        assert!(!is_standard("chr23"));
+    fn test_numeric_order() {
+        assert!(chrom_order("1") < chrom_order("2"));
+        assert!(chrom_order("9") < chrom_order("10"));
+        assert!(chrom_order("22") < chrom_order("25")); // zebrafish
+        // chr-prefixed and bare are equivalent in ordering
+        assert_eq!(chrom_order("chr1"), chrom_order("1"));
+        assert_eq!(chrom_order("chr22"), chrom_order("22"));
     }
 
     #[test]
-    fn test_chrom_order() {
-        assert!(chrom_order("chr1") < chrom_order("chr2"));
-        assert!(chrom_order("chr22") < chrom_order("chrX"));
+    fn test_sex_mito_order() {
+        // numeric < sex < mito
+        assert!(chrom_order("22") < chrom_order("X"));
+        assert!(chrom_order("22") < chrom_order("chrX"));
+        assert!(chrom_order("X") < chrom_order("Y"));
+        assert!(chrom_order("Y") < chrom_order("M"));
+        assert!(chrom_order("Y") < chrom_order("MT"));
         assert!(chrom_order("chrX") < chrom_order("chrY"));
         assert!(chrom_order("chrY") < chrom_order("chrM"));
+        // birds
+        assert_eq!(chrom_order("Z"), chrom_order("X")); // same group
+        assert_eq!(chrom_order("W"), chrom_order("Y")); // same group
+    }
+
+    #[test]
+    fn test_arm_order() {
+        // 2L and 2R sort between chr2 and chr3
+        assert!(chrom_order("2") < chrom_order("2L"));
+        assert!(chrom_order("2L") < chrom_order("2R"));
+        assert!(chrom_order("2R") < chrom_order("3"));
+        // chr-prefixed arms
+        assert!(chrom_order("chr2L") < chrom_order("chr2R"));
+        assert!(chrom_order("chr3L") < chrom_order("chr4"));
+    }
+
+    #[test]
+    fn test_other_chroms_after_sex_mito() {
+        // scaffolds / roman numerals sort after M
         assert!(chrom_order("chrM") < chrom_order("scaffold_1"));
+        assert!(chrom_order("M") < chrom_order("chrI")); // yeast/worm roman numerals
     }
 }

@@ -1,5 +1,6 @@
 use clap::Parser;
 use getinbed::{parse_format_str, process_batch, GetinbedError, Opts};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -29,9 +30,10 @@ struct Cli {
     #[arg(long, value_name = "COL")]
     split_on: Option<usize>,
 
-    /// Keep non-standard contigs instead of dropping them
-    #[arg(long)]
-    keep_nonstandard: bool,
+    /// Comma-separated list of chromosomes to keep (e.g. chr1,chr2,chrX,chrM).
+    /// When omitted, all chromosomes pass through.
+    #[arg(long, value_name = "CHROMS")]
+    chroms: Option<String>,
 
     /// Skip deduplication and malformed-row removal
     #[arg(long)]
@@ -73,13 +75,18 @@ fn run() -> Result<(), GetinbedError> {
         .transpose()?
         .unwrap_or_default();
 
+    let chroms = cli
+        .chroms
+        .as_deref()
+        .map(|s| s.split(',').map(|c| c.trim().to_string()).collect::<HashSet<_>>());
+
     let opts = Opts {
         out: cli.out,
         format,
         extra_columns,
         blacklist: cli.blacklist,
         split_on: cli.split_on,
-        keep_nonstandard: cli.keep_nonstandard,
+        chroms,
         no_clean: cli.no_clean,
         no_sort: cli.no_sort,
         jobs: cli.jobs,

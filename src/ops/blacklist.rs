@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
@@ -50,7 +49,7 @@ impl BlacklistIndex {
             let Ok(end) = cols[2].trim().parse::<u64>() else {
                 continue;
             };
-            let c = chrom::normalize(cols[0].trim());
+            let c = cols[0].trim().to_string();
             map.entry(c).or_default().push((start, end));
         }
 

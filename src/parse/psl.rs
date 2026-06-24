@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use flate2::read::GzDecoder;
@@ -23,7 +22,7 @@ fn parse_line(line: &str) -> Option<Record> {
     let tname = cols[13].trim();
     let tstart = cols[15].trim().parse::<u64>().ok()?;
     let tend = cols[16].trim().parse::<u64>().ok()?;
-    let chrom = chrom::normalize(tname);
+    let chrom = tname.to_string();
     Some(Record {
         chrom,
         start: tstart,
@@ -105,8 +104,11 @@ mod tests {
     }
 
     #[test]
-    fn test_psl_chrom_normalization() {
+    fn test_psl_chrom_passthrough() {
         let l = make_psl("1", 500, 600);
+        let r = line(&l).unwrap();
+        assert_eq!(r.chrom, "1");
+        let l = make_psl("chr1", 500, 600);
         let r = line(&l).unwrap();
         assert_eq!(r.chrom, "chr1");
     }

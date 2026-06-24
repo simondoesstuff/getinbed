@@ -1,4 +1,3 @@
-use crate::chrom;
 use crate::error::GetinbedError;
 use crate::parse::Record;
 use flate2::read::GzDecoder;
@@ -22,7 +21,7 @@ fn parse_line(line: &str) -> Option<Record> {
     // have transcript IDs. txStart/txEnd are at cols 3 and 4.
     let start = cols[3].trim().parse::<u64>().ok()?;
     let end = cols[4].trim().parse::<u64>().ok()?;
-    let chrom = chrom::normalize(cols[1].trim());
+    let chrom = cols[1].trim().to_string();
     Some(Record {
         chrom,
         start,
@@ -91,8 +90,10 @@ mod tests {
     }
 
     #[test]
-    fn test_genepred_chrom_normalization() {
+    fn test_genepred_chrom_passthrough() {
         let r = line("NM_001\t1\t+\t0\t100\t0\t100\t1\texons\texon_starts\t0").unwrap();
+        assert_eq!(r.chrom, "1");
+        let r = line("NM_001\tchr1\t+\t0\t100\t0\t100\t1\texons\texon_starts\t0").unwrap();
         assert_eq!(r.chrom, "chr1");
     }
 
