@@ -1,4 +1,3 @@
-use crate::chrom::chrom_order;
 use crate::detect;
 use crate::error::GetinbedError;
 use crate::ops;
