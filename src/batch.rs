@@ -4,6 +4,7 @@ use crate::error::GetinbedError;
 use crate::ops;
 use crate::ops::blacklist::BlacklistIndex;
 use crate::parse::{self, Format, Record};
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -44,10 +45,24 @@ pub fn process_batch(
         .map(|p| BlacklistIndex::load(p).map(Arc::new))
         .transpose()?;
 
-    files
+    let pb = make_progress_bar(files.len(), opts.quiet);
+
+    let results = files
         .par_iter()
-        .map(|path| process_one_file(path, opts, blacklist.as_deref()))
-        .collect::<Result<Vec<_>, _>>()
+        .map(|path| {
+            let r = process_one_file(path, opts, blacklist.as_deref());
+            if let Some(pb) = &pb {
+                pb.inc(1);
+            }
+            r
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if let Some(pb) = pb {
+        pb.finish_and_clear();
+    }
+
+    Ok(results)
 }
 
 pub fn process_one_for_memory(path: &Path, opts: &Opts) -> Result<Vec<Record>, GetinbedError> {
@@ -209,6 +224,21 @@ fn output_stem(path: &Path) -> String {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| base.to_string())
+}
+
+fn make_progress_bar(n: usize, quiet: bool) -> Option<ProgressBar> {
+    if quiet || n <= 1 {
+        return None;
+    }
+    let pb = ProgressBar::new(n as u64);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.cyan} [{bar:40.cyan/blue}] {pos}/{len} files  {elapsed_precise}",
+        )
+        .unwrap()
+        .progress_chars("=>-"),
+    );
+    Some(pb)
 }
 
 fn sanitize_filename(s: &str) -> String {
