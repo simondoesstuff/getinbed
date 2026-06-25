@@ -131,7 +131,7 @@ mod nif {
     }
 
     #[rustler::nif(schedule = "DirtyCpu")]
-    fn process_nif<'a>(
+    fn to_bed<'a>(
         env: Env<'a>,
         files: Vec<String>,
         opts_term: Term<'a>,
@@ -159,5 +159,5 @@ mod nif {
         }
     }
 
-    rustler::init!("Elixir.Getinbed");
+    rustler::init!("Elixir.GetInBed");
 }

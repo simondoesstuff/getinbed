@@ -1,0 +1,99 @@
+name: Precompile NIFs
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: NIF ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin,      os: macos-latest }
+          - { target: x86_64-apple-darwin,        os: macos-latest }
+          - { target: x86_64-unknown-linux-gnu,   os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-22.04, cross: true }
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04, cross: true }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Native builds need OTP to provide erl_nif.h; cross builds use bundled headers in rustler_sys.
+      - uses: erlef/setup-beam@v1
+        if: "!matrix.cross"
+        with:
+          otp-version: "26"
+          elixir-version: "1.17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: taiki-e/install-action@v2
+        if: matrix.cross
+        with:
+          tool: cross
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --features nif --target ${{ matrix.target }}
+          else
+            cargo build --release --features nif --target ${{ matrix.target }}
+          fi
+
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TARGET="${{ matrix.target }}"
+          NIF="2.16"
+
+          [[ "$TARGET" == *darwin* ]] && EXT=dylib || EXT=so
+
+          SRC="target/$TARGET/release/libgetinbed.$EXT"
+          ARCHIVE="libgetinbed-v${VERSION}-nif-${NIF}-${TARGET}.${EXT}.tar.gz"
+
+          tar -czf "$ARCHIVE" -C "$(dirname "$SRC")" "$(basename "$SRC")"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
+
+  checksums:
+    name: Generate checksums
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.17"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate checksum file
+        working-directory: elixir
+        env:
+          GETINBED_BUILD: "1"
+        run: |
+          mix deps.get
+          mix rustler_precompiled.download GetInBed --all --print > checksum-Elixir.GetInBed.exs
+
+      - name: Open PR with updated checksums
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update NIF checksums for ${{ github.ref_name }}"
+          title: "Update NIF checksums for ${{ github.ref_name }}"
+          body: "Automated checksum update after precompiled NIF release."
+          branch: "chore/checksums-${{ github.ref_name }}"
+          add-paths: elixir/checksum-Elixir.GetInBed.exs
