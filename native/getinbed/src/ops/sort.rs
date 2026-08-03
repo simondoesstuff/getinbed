@@ -44,20 +44,29 @@ pub fn sort(records: &mut Vec<Record>) {
         }
     }
 
-    // ── Step 2: rank unique chrom_order values densely 0..N ─────────────────
-    let mut orders: Vec<u64> = order_cache.values().copied().collect();
-    orders.sort_unstable();
-    orders.dedup();
-    let rank_of = |co: u64| -> u64 {
-        orders.binary_search(&co).unwrap() as u64
-    };
+    // ── Step 2: assign a unique rank to every chromosome ────────────────────
+    // Sort by (chrom_order, name) so that non-standard chroms (which all share
+    // chrom_order = u64::MAX-1) get distinct, lexicographically-stable ranks.
+    // This guarantees a fully deterministic packed key for every (chrom, start, end)
+    // triple, independent of input order or extra column content.
+    let mut chrom_rank: HashMap<String, u64> = HashMap::with_capacity(order_cache.len());
+    {
+        let mut pairs: Vec<(u64, &str)> = order_cache
+            .iter()
+            .map(|(name, &order)| (order, name.as_str()))
+            .collect();
+        pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(b.1)));
+        for (rank, (_, name)) in pairs.into_iter().enumerate() {
+            chrom_rank.insert(name.to_string(), rank as u64);
+        }
+    }
 
     // ── Step 3: build keyed index array ─────────────────────────────────────
     let mut keyed: Vec<KeyedIdx> = records
         .iter()
         .enumerate()
         .map(|(i, r)| {
-            let rank = rank_of(order_cache[&r.chrom]);
+            let rank = chrom_rank[&r.chrom];
             let key = (rank << (2 * COORD_BITS))
                 | ((r.start & COORD_MASK) << COORD_BITS)
                 | (r.end & COORD_MASK);
@@ -167,6 +176,25 @@ mod tests {
         let mut records = vec![rec("chr5", 100, 200)];
         sort(&mut records);
         assert_eq!(records[0].chrom, "chr5");
+    }
+
+    #[test]
+    fn test_sort_nonstandard_deterministic() {
+        // Two different non-standard chroms with identical coordinates must sort
+        // in consistent (lexicographic) order regardless of input order.
+        let fwd = {
+            let mut r = vec![rec("scaffold_B", 100, 200), rec("scaffold_A", 100, 200)];
+            sort(&mut r);
+            r.into_iter().map(|r| r.chrom).collect::<Vec<_>>()
+        };
+        let rev = {
+            let mut r = vec![rec("scaffold_A", 100, 200), rec("scaffold_B", 100, 200)];
+            sort(&mut r);
+            r.into_iter().map(|r| r.chrom).collect::<Vec<_>>()
+        };
+        assert_eq!(fwd, rev, "non-standard chrom order must be invariant to input order");
+        assert_eq!(fwd[0], "scaffold_A");
+        assert_eq!(fwd[1], "scaffold_B");
     }
 
     #[test]

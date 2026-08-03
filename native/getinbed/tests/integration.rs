@@ -312,6 +312,47 @@ fn test_only_comments() {
     assert!(content.is_empty());
 }
 
+/// Two files with the same (chrom, start, end) intervals must produce byte-for-byte
+/// identical output, regardless of:
+///   - input row order
+///   - extra columns in the source file
+///   - ordering of non-standard contig records
+#[test]
+fn test_output_is_deterministic() {
+    let out1 = TempDir::new().unwrap();
+    let out2 = TempDir::new().unwrap();
+
+    // Variant A: rows in one order, with extra columns
+    let a = write_bed(concat!(
+        "chr2\t500\t600\tpeak3\t900\t-\n",
+        "chr1\t0\t100\tpeak1\t500\t+\n",
+        "scaffold_B\t100\t200\tpeak5\n",
+        "scaffold_A\t100\t200\tpeak6\n",
+        "chr1\t200\t300\tpeak2\t800\t+\n",
+        "chrM\t0\t50\tpeak4\n",
+    ));
+
+    // Variant B: same intervals, reversed order, different extra columns
+    let b = write_bed(concat!(
+        "chrM\t0\t50\tXXX\tYYY\n",
+        "scaffold_A\t100\t200\tDIFFERENT\n",
+        "chr1\t200\t300\tother_name\t0\t.\n",
+        "scaffold_B\t100\t200\tALSO_DIFFERENT\n",
+        "chr1\t0\t100\tanother_name\t999\t-\n",
+        "chr2\t500\t600\tyet_another\t1\t+\n",
+    ));
+
+    let results_a =
+        process_batch(&[a.path().to_path_buf()], &default_opts(&out1)).unwrap();
+    let results_b =
+        process_batch(&[b.path().to_path_buf()], &default_opts(&out2)).unwrap();
+
+    let out_a = read_output(&results_a[0]);
+    let out_b = read_output(&results_b[0]);
+
+    assert_eq!(out_a, out_b, "outputs must be identical regardless of input order or extra columns");
+}
+
 #[test]
 fn test_windows_line_endings() {
     let out = TempDir::new().unwrap();
