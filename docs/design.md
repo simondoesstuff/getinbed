@@ -138,7 +138,7 @@ Partitions output by the unique values in a given column (0-indexed). Produces o
 
 ### Sort
 
-Chromosomes are sorted in karyotypic order: `chr1 < chr2 < ... < chr22 < chrX < chrY < chrM < (other)`. Within a chromosome, intervals are sorted by start then end. Sorting uses `voracious_radix_sort` on a packed `u64` key `(chrom_index << 34) | (start << 2) | end_tag`.
+Chromosomes are sorted in karyotypic order: `chr1 < chr2 < ... < chr22 < chrX < chrY < chrM < (other)`. Within a chromosome, intervals are sorted by start then end. Sorting uses `voracious_radix_sort` on a packed `u64` key `(chrom_rank << 58) | (start << 29) | end`, where `chrom_rank` is a dense 0-N index over the unique chromosomes present in the file (~25 for a human genome). The 29-bit coordinate fields support positions up to 536 Mbp, covering all known reference genomes.
 
 ## Batch Processing
 

@@ -1,45 +1,64 @@
 /// Karyotypic sort key for a chromosome name. Works on both UCSC-style
 /// (`chr1`, `chrX`) and bare (`1`, `X`, `2L`) names. Numeric chromosomes
 /// sort first (by number), then sex/mito, then everything else alphabetically.
+///
+/// Allocation-free: operates on bytes only, never calls to_ascii_uppercase() on a String.
 pub fn chrom_order(chrom: &str) -> u64 {
-    // Strip chr/Chr/CHR prefix for analysis
-    let bare = if chrom.len() > 3 && chrom[..3].eq_ignore_ascii_case("chr") {
-        &chrom[3..]
+    let b = chrom.as_bytes();
+
+    // Strip chr/Chr/CHR prefix
+    let bare = if b.len() > 3
+        && b[0].to_ascii_uppercase() == b'C'
+        && b[1].to_ascii_uppercase() == b'H'
+        && b[2].to_ascii_uppercase() == b'R'
+    {
+        &b[3..]
     } else {
-        chrom
+        b
     };
 
-    let upper = bare.to_ascii_uppercase();
+    // Single-character names: X, Y, Z, W, M
+    if bare.len() == 1 {
+        return match bare[0].to_ascii_uppercase() {
+            b'X' | b'Z' => u64::MAX - 4,
+            b'Y' | b'W' => u64::MAX - 3,
+            b'M' => u64::MAX - 2,
+            _ => {
+                // Single digit like "1".."9"
+                if bare[0].is_ascii_digit() {
+                    (bare[0] - b'0') as u64 * 256
+                } else {
+                    u64::MAX - 1
+                }
+            }
+        };
+    }
 
-    // Mitochondrial aliases — check before numeric so "M" doesn't fall through
-    if upper == "M" || upper == "MT" {
+    // "MT" mitochondrial
+    if bare.len() == 2
+        && bare[0].to_ascii_uppercase() == b'M'
+        && bare[1].to_ascii_uppercase() == b'T'
+    {
         return u64::MAX - 2;
     }
-    // Sex / dosage chromosomes (Z/W for birds, X/Y for mammals)
-    if upper == "X" || upper == "Z" {
-        return u64::MAX - 4;
-    }
-    if upper == "Y" || upper == "W" {
-        return u64::MAX - 3;
-    }
 
-    // Pure integer: "1", "22", "chr25" (zebrafish)
-    if let Ok(n) = bare.parse::<u64>() {
-        return n.saturating_mul(256);
-    }
-
-    // Integer + arm suffix: "2L", "2R", "3L" (Drosophila)
-    // Sort by chromosome number first, then arm letter.
-    let digit_end = bare.bytes().take_while(|b| b.is_ascii_digit()).count();
+    // Leading digits (chromosome number or arm prefix)
+    let digit_end = bare.iter().take_while(|b| b.is_ascii_digit()).count();
     if digit_end > 0 {
-        if let Ok(n) = bare[..digit_end].parse::<u64>() {
-            let arm = bare.as_bytes().get(digit_end).copied().unwrap_or(0) as u64;
+        // SAFETY: slice is all ASCII digits, valid UTF-8
+        let num_str = unsafe { std::str::from_utf8_unchecked(&bare[..digit_end]) };
+        if let Ok(n) = num_str.parse::<u64>() {
+            if digit_end == bare.len() {
+                // Pure integer: "1", "22", "25" (zebrafish)
+                return n.saturating_mul(256);
+            }
+            // Integer + arm suffix: "2L", "2R", "3L" (Drosophila)
+            let arm = bare[digit_end] as u64;
             return n.saturating_mul(256) + arm;
         }
     }
 
-    // Everything else (scaffolds, roman numerals, etc.) — sort alphabetically
-    // among themselves, after numeric/sex/mito chroms.
+    // Everything else (scaffolds, roman numerals, etc.)
     u64::MAX - 1
 }
 

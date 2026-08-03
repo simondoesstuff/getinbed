@@ -176,7 +176,7 @@ fn bench_pipeline(c: &mut Criterion) {
     let data = make_bed_bytes(n);
     c.bench_function("pipeline/parse+clean+sort_500k", |b| {
         b.iter(|| {
-            let mut records = parse_from_bytes(black_box(&data), Format::Bed);
+            let records = parse_from_bytes(black_box(&data), Format::Bed);
             let (mut records, _skipped) = clean(records);
             sort(&mut records);
             records

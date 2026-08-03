@@ -1,10 +1,15 @@
 use crate::parse::Record;
 use std::collections::HashSet;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 /// Drops malformed rows and deduplicates exact (chrom, start, end) triples.
 /// Returns (cleaned_records, n_skipped).
+///
+/// Uses a HashSet<u64> keyed on a hash of (chrom, start, end) to avoid cloning
+/// the chrom String on every record (20M clones saved for a typical large file).
+/// Collision probability ≈ n²/2⁶⁴ — negligible for any realistic input size.
 pub fn clean(records: Vec<Record>) -> (Vec<Record>, usize) {
-    let mut seen: HashSet<(String, u64, u64)> = HashSet::new();
+    let mut seen: HashSet<u64> = HashSet::with_capacity(records.len());
     let mut skipped = 0;
     let mut out = Vec::with_capacity(records.len());
 
@@ -13,16 +18,24 @@ pub fn clean(records: Vec<Record>) -> (Vec<Record>, usize) {
             skipped += 1;
             continue;
         }
-        let key = (r.chrom.clone(), r.start, r.end);
-        if seen.contains(&key) {
+        let key = triple_hash(&r.chrom, r.start, r.end);
+        if !seen.insert(key) {
             skipped += 1;
             continue;
         }
-        seen.insert(key);
         out.push(r);
     }
 
     (out, skipped)
+}
+
+#[inline]
+fn triple_hash(chrom: &str, start: u64, end: u64) -> u64 {
+    let mut h = DefaultHasher::new();
+    chrom.hash(&mut h);
+    start.hash(&mut h);
+    end.hash(&mut h);
+    h.finish()
 }
 
 #[cfg(test)]
