@@ -6,3 +6,7 @@
 /.venv
 /sync
 erl_crash.dump
+/_build/
+/deps/
+/priv/native/
+/elixir/

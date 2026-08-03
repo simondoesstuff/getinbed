@@ -4,7 +4,7 @@ Fast batch converter for genomic interval files into clean, normalized BED.
 
 Handles the messy reality of interval files: mixed formats, inconsistent chromosome naming, metadata headers, coordinate system differences. You hand it a pile of files; it hands back predictable BED.
 
-See [`docs/design.md`](docs/design.md) for full format and architecture details.
+See [`docs/`](docs/) for more detail: [`design.md`](docs/design.md) covers formats and architecture; [`split-on.md`](docs/split-on.md) covers the column-splitting feature; [`release.md`](docs/release.md) covers the release process.
 
 ## Supported formats
 
@@ -48,12 +48,17 @@ Options:
 
 ### Elixir / NIF
 
-The Rust engine ships as a Hex package with precompiled NIFs — no Rust toolchain required. It runs on a dirty scheduler thread and does not block the BEAM.
+The Rust engine ships with precompiled NIFs — no Rust toolchain required. It runs on a dirty scheduler thread and does not block the BEAM.
 
 ```elixir
-# mix.exs
+# mix.exs — via Hex (once published)
 {:getinbed, "~> 0.1"}
+
+# or via git
+{:getinbed, git: "https://github.com/simondoesstuff/getinbed"}
 ```
+
+To compile from source instead of downloading a precompiled NIF, set `GETINBED_BUILD=1` (requires a Rust toolchain).
 
 ```elixir
 {:ok, out_paths} = GetInBed.to_bed(

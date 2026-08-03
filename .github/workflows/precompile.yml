@@ -82,7 +82,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Generate checksum file
-        working-directory: elixir
         env:
           GETINBED_BUILD: "1"
         run: |
@@ -96,4 +95,4 @@ jobs:
           title: "Update NIF checksums for ${{ github.ref_name }}"
           body: "Automated checksum update after precompiled NIF release."
           branch: "chore/checksums-${{ github.ref_name }}"
-          add-paths: elixir/checksum-Elixir.GetInBed.exs
+          add-paths: checksum-Elixir.GetInBed.exs

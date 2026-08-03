@@ -1,32 +1,3 @@
-[package]
-name = "getinbed"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[features]
-nif = ["dep:rustler"]
-
-[dependencies]
-rustler = { version = "0.38", optional = true }
-clap = { version = "4", features = ["derive"] }
-memmap2 = "0.9"
-rayon = "1.11"
-thiserror = "2.0"
-atoi = "2"
-coitrees = "0.4"
-flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
-indicatif = "0.18"
-voracious_radix_sort = "1.2"
-bigtools = "0.5"
-noodles = { version = "0.111", features = ["bgzf"] }
-
-[dev-dependencies]
-tempfile = "3.10"
-criterion = { version = "0.5", features = ["html_reports"] }
-
-[[bench]]
-name = "bench"
-harness = false
+[workspace]
+members = ["native/getinbed"]
+resolver = "2"

@@ -14,7 +14,6 @@ defmodule GetInBed do
       x86_64-unknown-linux-musl
     ],
     force_build: System.get_env("GETINBED_BUILD") in ["1", "true"],
-    path: "..",
     features: ["nif"]
 
   @doc """

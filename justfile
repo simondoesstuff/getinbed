@@ -8,4 +8,4 @@ test:
 	cargo test
 
 test-elixir:
-	cd elixir && mix deps.get && GETINBED_BUILD=1 mix test
+	mix deps.get && GETINBED_BUILD=1 mix test
