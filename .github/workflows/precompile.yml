@@ -12,6 +12,8 @@ jobs:
   build:
     name: NIF ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -20,7 +22,6 @@ jobs:
           - { target: x86_64-apple-darwin,        os: macos-latest }
           - { target: x86_64-unknown-linux-gnu,   os: ubuntu-22.04 }
           - { target: aarch64-unknown-linux-gnu,  os: ubuntu-22.04, cross: true }
-          - { target: x86_64-unknown-linux-musl,  os: ubuntu-22.04, cross: true }
 
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +30,8 @@ jobs:
       - uses: erlef/setup-beam@v1
         if: "!matrix.cross"
         with:
-          otp-version: "26"
-          elixir-version: "1.17"
+          otp-version: "29"
+          elixir-version: "1.20"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -44,10 +45,13 @@ jobs:
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --features nif --target ${{ matrix.target }}
+            cross build -p getinbed --release --features nif --target ${{ matrix.target }}
           else
-            cargo build --release --features nif --target ${{ matrix.target }}
+            cargo build -p getinbed --release --features nif --target ${{ matrix.target }}
           fi
+
+      - name: List build output
+        run: ls -la target/${{ matrix.target }}/release/libgetinbed* || echo "no libgetinbed files found"
 
       - name: Package
         run: |
@@ -55,29 +59,34 @@ jobs:
           TARGET="${{ matrix.target }}"
           NIF="2.16"
 
-          [[ "$TARGET" == *darwin* ]] && EXT=dylib || EXT=so
+          [[ "$TARGET" == *darwin* ]] && SRC_EXT=dylib || SRC_EXT=so
 
-          SRC="target/$TARGET/release/libgetinbed.$EXT"
-          ARCHIVE="libgetinbed-v${VERSION}-nif-${NIF}-${TARGET}.${EXT}.tar.gz"
+          SRC="target/$TARGET/release/libgetinbed.$SRC_EXT"
+          ARCHIVE="libgetinbed-v${VERSION}-nif-${NIF}-${TARGET}.so.tar.gz"
 
-          tar -czf "$ARCHIVE" -C "$(dirname "$SRC")" "$(basename "$SRC")"
+          cp "$SRC" libgetinbed.so
+          tar -czf "$ARCHIVE" libgetinbed.so
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
       - uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ARCHIVE }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   checksums:
     name: Generate checksums
     needs: build
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "26"
-          elixir-version: "1.17"
+          otp-version: "29"
+          elixir-version: "1.20"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -89,10 +98,20 @@ jobs:
           mix rustler_precompiled.download GetInBed --all --print > checksum-Elixir.GetInBed.exs
 
       - name: Open PR with updated checksums
-        uses: peter-evans/create-pull-request@v7
-        with:
-          commit-message: "chore: update NIF checksums for ${{ github.ref_name }}"
-          title: "Update NIF checksums for ${{ github.ref_name }}"
-          body: "Automated checksum update after precompiled NIF release."
-          branch: "chore/checksums-${{ github.ref_name }}"
-          add-paths: checksum-Elixir.GetInBed.exs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="chore/checksums-${{ github.ref_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add checksum-Elixir.GetInBed.exs
+          git diff --cached --quiet && echo "No checksum changes." && exit 0
+          git commit -m "chore: update NIF checksums for ${{ github.ref_name }}"
+          git push origin "$BRANCH" --force
+          gh pr create \
+            --title "Update NIF checksums for ${{ github.ref_name }}" \
+            --body "Automated checksum update after precompiled NIF release." \
+            --base main \
+            --head "$BRANCH" \
+            || echo "PR already exists."
