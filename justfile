@@ -1,3 +1,7 @@
+clean:
+	cargo clean
+	rm -rf _build deps priv/ elixir/
+
 run *args='-h':
 	cargo run --release --bin getinbed -- {{args}}
 
